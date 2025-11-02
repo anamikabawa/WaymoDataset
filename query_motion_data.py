@@ -205,6 +205,27 @@ def query_example_6(conn):
     else:
         print("No edge cases to analyze")
 
+def right_evasive(conn):
+   """Finding times where EV encounters an obstacle when intent was to go right."""
+   print("\n" + "="*80)
+   print("EXAMPLE 7: Find cases of sudden evasive meanuver right")
+   print("="*80)
+  
+   query = '''
+       SELECT
+           frame_id, file_name, intent, accel_x_min, speed_max,
+           (SELECT COUNT(*) FROM frames WHERE accel_x_min < f.accel_x_min) as rank
+    
+        FROM frames f
+	    WHERE intent = 'GO_RIGHT'
+        ORDER BY accel_x_min ASC
+ 	    LIMIT 10
+    '''
+  
+   df = pd.read_sql_query(query, conn)
+   print(df.to_string(index=False))
+   print(f"\nThese {len(df)} frames represent an evasive meanuver when going right. Specifically going right and breaking hard.")
+
 
 # ============================================================================
 # MAIN
@@ -216,12 +237,14 @@ if __name__ == '__main__':
     if conn:
         try:
             # Run example queries
-            query_example_1(conn)
+            """ query_example_1(conn)
             query_example_2(conn)
             query_example_3(conn)
             query_example_4(conn)
             query_example_5(conn)
-            query_example_6(conn)
+            query_example_6(conn) """
+
+            right_evasive(conn)
             
             print("\n" + "="*80)
             print("✓ Query analysis complete")
