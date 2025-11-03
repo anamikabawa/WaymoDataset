@@ -287,15 +287,26 @@ async def get_scatter_chart():
     try:
         conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
-            "SELECT f.speed_max as speed, f.accel_x_min as accel, ec.severity FROM edge_cases ec JOIN frames f ON ec.frame_id = f.frame_id",
+            """SELECT 
+                f.speed_max as speed, 
+                f.accel_x_min as accel, 
+                ec.severity,
+                ec.edge_case_type,
+                ec.file_name
+            FROM edge_cases ec 
+            JOIN frames f ON ec.frame_id = f.frame_id""",
             conn
         )
         conn.close()
 
         result = [
-            {"speed": round(float(row[0]) if row[0] else 0, 2), 
-             "accel": round(float(row[1]) if row[1] else 0, 2), 
-             "severity": round(float(row[2]) if row[2] else 0, 2)}
+            {
+                "speed": round(float(row[0]) if row[0] else 0, 2), 
+                "accel": round(float(row[1]) if row[1] else 0, 2), 
+                "severity": round(float(row[2]) if row[2] else 0, 2),
+                "edge_case_type": row[3],
+                "file_name": row[4]
+            }
             for row in df.values
         ]
         return result
@@ -531,6 +542,45 @@ async def get_frame_data(frame_id: int):
         return jsonable_encoder(result)
     except Exception as e:
         return {"error": str(e)}, 500
+
+
+# ================== Agent Chat Endpoint (Sample) ==================#
+@app.post("/api/agent/chat")
+async def agent_chat(request: dict):
+    """Sample AI agent chat endpoint that returns a mock response"""
+    try:
+        user_message = request.get("message", "")
+        
+        # Sample responses based on keywords
+        responses = {
+            "high severity": "I found 234 high-severity cases (severity > 0.8) in the dataset. Most occur during right turns at speeds above 15 m/s with lateral acceleration over 0.6 m/s². Would you like me to show you the specific frames?",
+            "edge case": "The dataset contains 5 main edge case types: Hard Brake, Sharp Turn, Rapid Acceleration, Lane Change, and Emergency Stop. The most common is Hard Brake with 1,247 occurrences. Which type would you like to explore?",
+            "speed": "Average speed across all frames is 12.3 m/s (≈27.5 mph). The highest speeds occur during highway scenarios, with max recorded at 29.8 m/s (≈66.7 mph). Speed distribution is bimodal with peaks at 5 m/s (urban) and 20 m/s (highway).",
+            "file": f"The dataset contains {10} unique tfrecord files. The file with most edge cases is 'segment_12345.tfrecord' with 89 flagged frames. Would you like to filter the dashboard to show only this file?",
+            "default": f"Based on your question '{user_message}', I analyzed the edge case database. The data shows interesting patterns in vehicle behavior during critical scenarios. Could you be more specific about what you'd like to explore?"
+        }
+        
+        # Find matching response
+        response_text = responses["default"]
+        for keyword, response in responses.items():
+            if keyword in user_message.lower():
+                response_text = response
+                break
+        
+        return {
+            "response": response_text,
+            "tool_calls": [
+                {
+                    "tool": "execute_sql_query",
+                    "query": "SELECT COUNT(*) FROM edge_cases WHERE severity > 0.8",
+                    "row_count": 1,
+                    "success": True
+                }
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
+
 
 if __name__ == "__main__":
     import uvicorn

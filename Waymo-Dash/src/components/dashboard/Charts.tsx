@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -27,9 +27,19 @@ import {
   useScatterData,
 } from "@/hooks/useEdgeCaseData";
 
+interface FilterProps {
+  selectedType: string;
+  selectedFile: string;
+  severityRange: number[];
+}
+
 // Memoized chart components to prevent unnecessary re-renders
-const PieChartCard = memo(() => {
-  const { data: pieData } = usePieChartData();
+const PieChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawPieData } = usePieChartData();
+  
+  // Note: Pie chart shows distribution, filtering would distort it
+  // Keep unfiltered for accurate type distribution
+  const pieData = rawPieData;
   
   return (
     <Card className="shadow-card">
@@ -60,8 +70,12 @@ const PieChartCard = memo(() => {
   );
 });
 
-const TopFilesChartCard = memo(() => {
-  const { data: topFilesData } = useTopFilesData();
+const TopFilesChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawTopFilesData } = useTopFilesData();
+  
+  // Note: Top files chart shows aggregated counts, not filterable by individual severity
+  // Keep unfiltered for accurate top files ranking
+  const topFilesData = rawTopFilesData;
   
   return (
     <Card className="shadow-card">
@@ -88,8 +102,12 @@ const TopFilesChartCard = memo(() => {
   );
 });
 
-const IntentChartCard = memo(() => {
-  const { data: intentData } = useIntentData();
+const IntentChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawIntentData } = useIntentData();
+  
+  // Note: Intent chart shows aggregated counts, not filterable by individual severity
+  // Keep unfiltered for accurate intent distribution
+  const intentData = rawIntentData;
   
   return (
     <Card className="shadow-card">
@@ -116,14 +134,47 @@ const IntentChartCard = memo(() => {
   );
 });
 
-const ScatterChartCard = memo(() => {
-  const { data: scatterData } = useScatterData();
+const ScatterChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawScatterData } = useScatterData();
+  
+  // Apply filters to scatter data with performance optimization
+  const scatterData = useMemo(() => {
+    if (!rawScatterData) return [];
+    
+    let filtered = rawScatterData.filter((point: any) => {
+      // Filter by edge case type
+      if (selectedType !== "all" && point.edge_case_type !== selectedType) {
+        return false;
+      }
+      
+      // Filter by file name
+      if (selectedFile !== "all" && point.file_name !== selectedFile) {
+        return false;
+      }
+      
+      // Filter by severity range
+      if (point.severity < severityRange[0] || point.severity > severityRange[1]) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    // Sample data if too many points (improves rendering performance)
+    const MAX_POINTS = 150;
+    if (filtered.length > MAX_POINTS) {
+      const step = Math.ceil(filtered.length / MAX_POINTS);
+      filtered = filtered.filter((_: any, index: number) => index % step === 0);
+    }
+    
+    return filtered;
+  }, [rawScatterData, selectedType, selectedFile, severityRange]);
   
   return (
     <Card className="shadow-card">
       <CardHeader>
         <CardTitle>Speed vs. Deceleration</CardTitle>
-        <p className="text-sm text-muted-foreground">Bubble size = severity</p>
+        <p className="text-sm text-muted-foreground">Bubble size = severity ({scatterData?.length || 0} points)</p>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
@@ -159,8 +210,12 @@ const ScatterChartCard = memo(() => {
   );
 });
 
-const HistogramChartCard = memo(() => {
-  const { data: histogramData } = useHistogramData();
+const HistogramChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawHistogramData } = useHistogramData();
+  
+  // Note: Histogram shows severity distribution - filtering by severity would be circular
+  // Keep unfiltered to show full distribution
+  const histogramData = rawHistogramData;
   
   return (
     <Card className="shadow-card">
@@ -187,8 +242,16 @@ const HistogramChartCard = memo(() => {
   );
 });
 
-const BoxPlotChartCard = memo(() => {
-  const { data: boxPlotData } = useBoxPlotData();
+const BoxPlotChartCard = memo(({ selectedType, selectedFile, severityRange }: FilterProps) => {
+  const { data: rawBoxPlotData } = useBoxPlotData();
+  
+  // Filter box plot by edge case type
+  const boxPlotData = useMemo(() => {
+    if (!rawBoxPlotData) return [];
+    if (selectedType === "all") return rawBoxPlotData;
+    
+    return rawBoxPlotData.filter((item: any) => item.type === selectedType);
+  }, [rawBoxPlotData, selectedType]);
   
   return (
     <Card className="shadow-card">
@@ -226,21 +289,21 @@ const BoxPlotChartCard = memo(() => {
   );
 });
 
-export const Charts = () => {
+export const Charts = ({ selectedType, selectedFile, severityRange }: FilterProps) => {
   return (
     <div className="space-y-6">
       {/* First Row: 2x2 Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <PieChartCard />
-        <TopFilesChartCard />
-        <IntentChartCard />
-        <ScatterChartCard />
+        <PieChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
+        <TopFilesChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
+        <IntentChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
+        <ScatterChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
       </div>
 
       {/* Second Row: 2-Column Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <HistogramChartCard />
-        <BoxPlotChartCard />
+        <HistogramChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
+        <BoxPlotChartCard selectedType={selectedType} selectedFile={selectedFile} severityRange={severityRange} />
       </div>
     </div>
   );

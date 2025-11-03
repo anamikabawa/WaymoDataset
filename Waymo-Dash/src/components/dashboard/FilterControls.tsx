@@ -74,7 +74,7 @@ export const FilterControls = ({
             </label>
             <Slider
               min={0}
-              max={1}
+              max={3}
               step={0.1}
               value={severityRange}
               onValueChange={onSeverityChange}
