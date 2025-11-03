@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Camera, Flag } from "lucide-react";
 interface PreFlaggedTableProps {
   page: number;
   onPageChange: (page: number) => void;
-  onViewThumbnail: (frameId: string) => void;
+  onViewThumbnail: (frameData: any) => void;
 }
 
 export const PreFlaggedTable = ({ page, onPageChange, onViewThumbnail }: PreFlaggedTableProps) => {
@@ -30,7 +30,7 @@ export const PreFlaggedTable = ({ page, onPageChange, onViewThumbnail }: PreFlag
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isLoading ? (
+        {isLoading || !data ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-pulse-subtle text-muted-foreground">Loading data...</div>
           </div>
@@ -51,7 +51,7 @@ export const PreFlaggedTable = ({ page, onPageChange, onViewThumbnail }: PreFlag
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.data.map((row: any, index: number) => (
+                  {Array.isArray(data.data) && data.data.map((row: any, index: number) => (
                     <TableRow key={index}>
                       <TableCell className="font-mono text-xs">{row.frame_id}</TableCell>
                       <TableCell className="text-sm">{row.file}</TableCell>
@@ -64,7 +64,7 @@ export const PreFlaggedTable = ({ page, onPageChange, onViewThumbnail }: PreFlag
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => onViewThumbnail(row.frame_id)}
+                          onClick={() => onViewThumbnail(row)}
                         >
                           <Camera className="h-4 w-4" />
                         </Button>
@@ -77,7 +77,7 @@ export const PreFlaggedTable = ({ page, onPageChange, onViewThumbnail }: PreFlag
 
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
-                Page {data?.page} of {data?.pages} ({data?.total} total cases)
+                Page {data.page} of {data.pages} ({data.total} total cases)
               </div>
               <div className="flex gap-2">
                 <Button

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import base64
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 
 app = fastapi.FastAPI()
 
@@ -17,12 +18,71 @@ app.add_middleware(
 
 DB_PATH = "../waymo_dataset/results/edge_cases.db"
 
+# ================== Batched Dashboard Summary (Phase 2 Optimization) ==================#
+@app.get("/api/dashboard-summary")
+async def get_dashboard_summary():
+    """Fetch all dashboard data in a single request to avoid multiple roundtrips"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Stats
+        totalEdgeCases = cursor.execute("SELECT COUNT(*) FROM edge_cases").fetchone()[0]
+        filesProcessed = cursor.execute("SELECT COUNT(DISTINCT file_name) FROM edge_cases").fetchone()[0]
+        edgeCaseTypes = cursor.execute("SELECT COUNT(DISTINCT edge_case_type) FROM edge_cases").fetchone()[0]
+        maxSeverity = cursor.execute("SELECT MAX(severity) FROM edge_cases").fetchone()[0] or 0
+        
+        # Filters
+        types_data = cursor.execute("SELECT DISTINCT edge_case_type FROM edge_cases ORDER BY edge_case_type").fetchall()
+        files_data = cursor.execute("SELECT DISTINCT file_name FROM edge_cases ORDER BY file_name").fetchall()
+        
+        # Pie chart
+        pie_data = cursor.execute("SELECT edge_case_type as name, COUNT(*) as value FROM edge_cases GROUP BY edge_case_type").fetchall()
+        
+        # Intent chart
+        intent_data = cursor.execute("SELECT intent, COUNT(*) as count FROM frames GROUP BY intent ORDER BY count DESC").fetchall()
+        
+        conn.close()
+        
+        # Format pie chart
+        colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", 
+                  "var(--chart-4)", "var(--chart-5)", "var(--muted)"]
+        pie_formatted = [
+            {"name": row[0], "value": row[1], "fill": colors[i % len(colors)]}
+            for i, row in enumerate(pie_data)
+        ]
+        
+        # Format intent chart
+        intent_formatted = [
+            {"intent": row[0] or "Unknown", "count": row[1]}
+            for row in intent_data
+        ]
+        
+        return {
+            "stats": {
+                "totalEdgeCases": totalEdgeCases,
+                "filesProcessed": filesProcessed,
+                "edgeCaseTypes": edgeCaseTypes,
+                "maxSeverity": round(maxSeverity, 4)
+            },
+            "filters": {
+                "types": [t[0] for t in types_data],
+                "files": [f[0] for f in files_data]
+            },
+            "charts": {
+                "pie": pie_formatted,
+                "intent": intent_formatted
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
+
 # Ad-hoc queries configuration
 AD_HOC_QUERIES = {
     'hard_brake_while_turning_right': {
         'name': 'Hard Brake while Turning Right',
         'query': """
-            SELECT frame_id, file_name, intent, accel_x_min, speed_max
+            SELECT frame_id, file_name, intent, accel_x_min, speed_max, panorama_thumbnail
             FROM frames
             WHERE intent = 'GO_RIGHT' AND accel_x_min < -0.8
             ORDER BY accel_x_min ASC
@@ -32,7 +92,7 @@ AD_HOC_QUERIES = {
     'high_lateral_accel_going_straight': {
         'name': 'High Lateral Accel. while Going Straight (Suspicious)',
         'query': """
-            SELECT frame_id, file_name, intent, accel_y_max, speed_max, accel_x_min
+            SELECT frame_id, file_name, intent, accel_y_max, speed_max, accel_x_min, panorama_thumbnail
             FROM frames
             WHERE intent = 'GO_STRAIGHT' AND accel_y_max > 0.6
             ORDER BY accel_y_max DESC
@@ -42,7 +102,7 @@ AD_HOC_QUERIES = {
     'high_jerk_at_low_speed': {
         'name': 'High Jerk at Low Speed (Stop-Go Traffic?)',
         'query': """
-            SELECT frame_id, file_name, intent, jerk_x_max, speed_max
+            SELECT frame_id, file_name, intent, jerk_x_max, speed_max, panorama_thumbnail
             FROM frames
             WHERE speed_max < 5.0 AND jerk_x_max > 0.4
             ORDER BY jerk_x_max DESC
@@ -58,6 +118,15 @@ async def health_check():
 
 
 # ================== Main API Endpoints ==================#
+
+# Get available ad-hoc queries
+@app.get("/api/adhoc/queries")
+async def get_adhoc_queries():
+    """Return list of available ad-hoc query options"""
+    return [
+        {"value": key, "label": query_def['name']}
+        for key, query_def in AD_HOC_QUERIES.items()
+    ]
 
 # Stats and Filters
 @app.get("/api/stats")
@@ -117,12 +186,12 @@ async def get_pie_chart():
 
         # Color palette for pie chart
         colors = [
-            "hsl(var(--chart-1))",
-            "hsl(var(--chart-2))",
-            "hsl(var(--chart-3))",
-            "hsl(var(--chart-4))",
-            "hsl(var(--chart-5))",
-            "hsl(var(--muted))",
+            "var(--chart-1)",
+            "var(--chart-2)",
+            "var(--chart-3)",
+            "var(--chart-4)",
+            "var(--chart-5)",
+            "var(--muted)",
         ]
 
         result = [
@@ -218,15 +287,15 @@ async def get_scatter_chart():
     try:
         conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
-            "SELECT f.speed_max as x, f.accel_x_min as y, ec.severity as z FROM edge_cases ec JOIN frames f ON ec.frame_id = f.frame_id",
+            "SELECT f.speed_max as speed, f.accel_x_min as accel, ec.severity FROM edge_cases ec JOIN frames f ON ec.frame_id = f.frame_id",
             conn
         )
         conn.close()
 
         result = [
-            {"x": round(float(row[0]) if row[0] else 0, 2), 
-             "y": round(float(row[1]) if row[1] else 0, 2), 
-             "z": round(float(row[2]) if row[2] else 0, 2)}
+            {"speed": round(float(row[0]) if row[0] else 0, 2), 
+             "accel": round(float(row[1]) if row[1] else 0, 2), 
+             "severity": round(float(row[2]) if row[2] else 0, 2)}
             for row in df.values
         ]
         return result
@@ -246,7 +315,37 @@ async def get_ad_hoc_query(query_name: str):
         df = pd.read_sql_query(query, conn)
         conn.close()
 
-        return df.to_dict('records')
+        # Convert DataFrame to dict and then sanitize all values
+        data = df.to_dict('records')
+        
+        sanitized_data = []
+        for record in data:
+            sanitized_record = {}
+            for key, value in record.items():
+                # Handle None first
+                if value is None:
+                    sanitized_record[key] = None
+                # Handle numpy integers
+                elif isinstance(value, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                    sanitized_record[key] = int(value)
+                # Handle numpy floats
+                elif isinstance(value, (np.floating, np.float64, np.float32)):
+                    sanitized_record[key] = float(value)
+                # Handle bytes
+                elif isinstance(value, bytes):
+                    try:
+                        sanitized_record[key] = base64.b64encode(value).decode('utf-8')
+                    except Exception:
+                        sanitized_record[key] = None
+                # Handle NaN
+                elif isinstance(value, float) and np.isnan(value):
+                    sanitized_record[key] = None
+                # Keep everything else as is
+                else:
+                    sanitized_record[key] = value
+            sanitized_data.append(sanitized_record)
+        
+        return sanitized_data
     except Exception as e:
         return {"error": str(e)}, 500
 
@@ -259,7 +358,8 @@ async def get_pre_flagged_data(page: int = 1):
         conn = sqlite3.connect(DB_PATH)
         
         # Get total count
-        total = pd.read_sql_query("SELECT COUNT(*) as count FROM edge_cases", conn)['count'][0]
+        total_row = pd.read_sql_query("SELECT COUNT(*) as count FROM edge_cases", conn)
+        total = int(total_row['count'].iloc[0])
         
         # Get paginated data
         df = pd.read_sql_query(
@@ -281,7 +381,8 @@ async def get_pre_flagged_data(page: int = 1):
                 f.accel_y_min,
                 f.accel_y_max,
                 f.jerk_x_max,
-                f.jerk_y_max
+                f.jerk_y_max,
+                f.panorama_thumbnail
             FROM edge_cases ec
             LEFT JOIN frames f ON ec.frame_id = f.frame_id
             ORDER BY ec.severity DESC
@@ -295,23 +396,61 @@ async def get_pre_flagged_data(page: int = 1):
 
         pages = (total + 24) // 25
 
-        # Convert all numpy/pandas types to native Python types
-        df = df.astype('object').where(pd.notna(df), None)
+        # Convert DataFrame to dict
         data = df.to_dict('records')
         
-        # Convert remaining numpy types
+        # Sanitize all values - convert numpy types to native Python types
+        sanitized_data = []
         for record in data:
+            sanitized_record = {}
             for key, value in record.items():
-                if isinstance(value, (np.integer, np.floating)):
-                    record[key] = value.item()
-
-        return {
-            "data": data,
-            "total": int(total),
+                if value is None:
+                    sanitized_record[key] = None
+                elif isinstance(value, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                    sanitized_record[key] = int(value)
+                elif isinstance(value, (np.floating, np.float64, np.float32)):
+                    sanitized_record[key] = float(value)
+                elif isinstance(value, bytes):
+                    try:
+                        sanitized_record[key] = base64.b64encode(value).decode('utf-8')
+                    except Exception:
+                        sanitized_record[key] = None
+                elif isinstance(value, float) and np.isnan(value):
+                    sanitized_record[key] = None
+                else:
+                    sanitized_record[key] = value
+            
+            # Add derived fields for the frontend
+            sanitized_record['file'] = sanitized_record.get('file_name', '')
+            if sanitized_record.get('speed_mean') is not None:
+                sanitized_record['speed'] = f"{sanitized_record['speed_mean']:.2f}"
+            else:
+                sanitized_record['speed'] = '0.00'
+            
+            accel_vals = []
+            for key in ['accel_x_min', 'accel_x_max', 'accel_y_min', 'accel_y_max']:
+                val = sanitized_record.get(key)
+                if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                    accel_vals.append(abs(float(val)))
+            
+            if accel_vals:
+                sanitized_record['accel'] = f"{max(accel_vals):.2f}"
+            else:
+                sanitized_record['accel'] = '0.00'
+            
+            sanitized_data.append(sanitized_record)
+        
+        # Use jsonable_encoder to convert any remaining numpy types
+        result = {
+            "data": sanitized_data,
+            "total": total,
             "page": page,
             "pages": pages
         }
+        return jsonable_encoder(result)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}, 500
 
 
@@ -322,14 +461,25 @@ async def get_frame_data(frame_id: int):
         cursor = conn.cursor()
         
         cursor.row_factory = sqlite3.Row
+        # Select only needed columns to speed up response
         cursor.execute(
             """
             SELECT 
-                f.*,
+                f.frame_id,
+                f.file_name,
+                f.intent,
+                f.speed_min,
+                f.speed_max,
+                f.speed_mean,
+                f.accel_x_min,
+                f.accel_x_max,
+                f.accel_y_min,
+                f.accel_y_max,
+                f.jerk_x_max,
+                f.jerk_y_max,
                 ec.edge_case_type,
                 ec.severity,
-                ec.reason,
-                ec.panorama_thumbnail
+                ec.reason
             FROM frames f
             LEFT JOIN edge_cases ec ON f.frame_id = ec.frame_id
             WHERE f.frame_id = ?
@@ -345,17 +495,40 @@ async def get_frame_data(frame_id: int):
 
         result = dict(row)
         
-        # Convert thumbnail blob to base64 if it exists
-        if result.get('panorama_thumbnail'):
-            try:
-                thumbnail_b64 = base64.b64encode(result['panorama_thumbnail']).decode()
-                result['panorama_thumbnail'] = f"data:image/jpeg;base64,{thumbnail_b64}"
-            except Exception:
-                result['panorama_thumbnail'] = None
+        # Convert numpy types and thumbnail blob
+        for key, value in result.items():
+            if isinstance(value, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                result[key] = int(value)
+            elif isinstance(value, (np.floating, np.float64, np.float32)):
+                result[key] = float(value)
+            elif isinstance(value, bytes) and key == 'panorama_thumbnail' and value is not None:
+                # Only encode if thumbnail exists (skip NULL values)
+                try:
+                    result[key] = base64.b64encode(value).decode('utf-8')
+                except Exception:
+                    result[key] = None
+            elif pd.isna(value):
+                result[key] = None
+        
+        # Add derived fields for the frontend
+        result['file'] = result.get('file_name', '')
+        if result.get('speed_mean') is not None:
+            result['speed'] = f"{result['speed_mean']:.2f}"
         else:
-            result['panorama_thumbnail'] = None
+            result['speed'] = '0.00'
+        
+        accel_vals = []
+        for key in ['accel_x_min', 'accel_x_max', 'accel_y_min', 'accel_y_max']:
+            val = result.get(key)
+            if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                accel_vals.append(abs(float(val)))
+        
+        if accel_vals:
+            result['accel'] = f"{max(accel_vals):.2f}"
+        else:
+            result['accel'] = '0.00'
 
-        return result
+        return jsonable_encoder(result)
     except Exception as e:
         return {"error": str(e)}, 500
 

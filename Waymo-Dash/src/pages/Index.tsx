@@ -11,14 +11,14 @@ const Index = () => {
   const [selectedFile, setSelectedFile] = useState("all");
   const [severityRange, setSeverityRange] = useState([0, 1]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
+  const [selectedFrame, setSelectedFrame] = useState<any | null>(null);
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card shadow-sm">
         <div className="container mx-auto px-6 py-6">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent">
             🚗 Waymo Edge Case Detection Dashboard
           </h1>
         </div>
@@ -43,18 +43,18 @@ const Index = () => {
         <Charts />
 
         {/* Ad-Hoc Query Section */}
-        <AdHocQuery onViewThumbnail={setSelectedFrameId} />
+        <AdHocQuery onViewThumbnail={setSelectedFrame} />
 
         {/* Pre-Flagged Cases Table */}
         <PreFlaggedTable
           page={currentPage}
           onPageChange={setCurrentPage}
-          onViewThumbnail={setSelectedFrameId}
+          onViewThumbnail={setSelectedFrame}
         />
       </main>
 
       {/* Thumbnail Modal */}
-      <ThumbnailModal frameId={selectedFrameId} onClose={() => setSelectedFrameId(null)} />
+      <ThumbnailModal frameData={selectedFrame} onClose={() => setSelectedFrame(null)} />
     </div>
   );
 };

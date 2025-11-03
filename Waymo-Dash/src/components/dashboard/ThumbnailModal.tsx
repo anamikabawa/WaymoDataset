@@ -1,38 +1,41 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useFrameDetail } from "@/hooks/useEdgeCaseData";
-import { Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 interface ThumbnailModalProps {
-  frameId: string | null;
+  frameData: any | null;
   onClose: () => void;
 }
 
-export const ThumbnailModal = ({ frameId, onClose }: ThumbnailModalProps) => {
-  const { data: frame, isLoading } = useFrameDetail(frameId);
+export const ThumbnailModal = ({ frameData, onClose }: ThumbnailModalProps) => {
+  // No API call needed - data is already passed from the table!
+  const frame = frameData;
 
   return (
-    <Dialog open={!!frameId} onOpenChange={() => onClose()}>
+    <Dialog open={!!frameData} onOpenChange={() => onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>
             Frame {frame?.frame_id} - {frame?.edge_case_type}
           </DialogTitle>
+          <DialogDescription>
+            Detailed view of edge case frame and motion metrics
+          </DialogDescription>
         </DialogHeader>
         
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="space-y-6">
+        <div className="space-y-6">
             {/* Thumbnail Image */}
-            <div className="bg-muted rounded-lg overflow-hidden">
-              <img
-                src={`data:image/jpeg;base64,${frame?.thumbnail}`}
-                alt={`Frame ${frame?.frame_id}`}
-                className="w-full h-auto"
-              />
-            </div>
+            {frame?.panorama_thumbnail ? (
+              <div className="bg-muted rounded-lg overflow-hidden">
+                <img
+                  src={`data:image/jpeg;base64,${frame.panorama_thumbnail}`}
+                  alt={`Frame ${frame?.frame_id}`}
+                  className="w-full h-auto"
+                />
+              </div>
+            ) : (
+              <div className="bg-muted rounded-lg overflow-hidden flex items-center justify-center h-64">
+                <p className="text-muted-foreground">No thumbnail available for this frame</p>
+              </div>
+            )}
 
             {/* Metadata */}
             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -74,7 +77,6 @@ export const ThumbnailModal = ({ frameId, onClose }: ThumbnailModalProps) => {
               </div>
             </div>
           </div>
-        )}
       </DialogContent>
     </Dialog>
   );

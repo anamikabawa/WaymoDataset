@@ -2,38 +2,46 @@ import { useQuery } from "@tanstack/react-query";
 
 const API_BASE = "http://localhost:8000";
 
-// React Query hooks
-export const useStats = () => {
+// Phase 2 Optimization: Single batched dashboard summary endpoint
+export const useDashboardSummary = () => {
   return useQuery({
-    queryKey: ["stats"],
+    queryKey: ["dashboard-summary"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/stats`);
-      if (!res.ok) throw new Error("Failed to fetch stats");
+      const res = await fetch(`${API_BASE}/api/dashboard-summary`);
+      if (!res.ok) throw new Error("Failed to fetch dashboard summary");
       return res.json();
     },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
   });
+};
+
+// Hooks that derive from batched summary
+export const useStats = () => {
+  const summary = useDashboardSummary();
+  return {
+    data: summary.data?.stats,
+    isLoading: summary.isLoading,
+    error: summary.error,
+  };
 };
 
 export const useFilters = () => {
-  return useQuery({
-    queryKey: ["filters"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/filters`);
-      if (!res.ok) throw new Error("Failed to fetch filters");
-      return res.json();
-    },
-  });
+  const summary = useDashboardSummary();
+  return {
+    data: summary.data?.filters,
+    isLoading: summary.isLoading,
+    error: summary.error,
+  };
 };
 
 export const usePieChartData = () => {
-  return useQuery({
-    queryKey: ["charts", "pie"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/charts/pie`);
-      if (!res.ok) throw new Error("Failed to fetch pie chart data");
-      return res.json();
-    },
-  });
+  const summary = useDashboardSummary();
+  return {
+    data: summary.data?.charts?.pie,
+    isLoading: summary.isLoading,
+    error: summary.error,
+  };
 };
 
 export const useHistogramData = () => {
@@ -70,14 +78,12 @@ export const useTopFilesData = () => {
 };
 
 export const useIntentData = () => {
-  return useQuery({
-    queryKey: ["charts", "intent"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/charts/intent`);
-      if (!res.ok) throw new Error("Failed to fetch intent data");
-      return res.json();
-    },
-  });
+  const summary = useDashboardSummary();
+  return {
+    data: summary.data?.charts?.intent,
+    isLoading: summary.isLoading,
+    error: summary.error,
+  };
 };
 
 export const useScatterData = () => {
@@ -125,5 +131,17 @@ export const useAdHocQuery = (queryName: string | null) => {
       return res.json();
     },
     enabled: !!queryName,
+  });
+};
+
+export const useAdHocQueries = () => {
+  return useQuery({
+    queryKey: ["adhoc-queries"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/adhoc/queries`);
+      if (!res.ok) throw new Error("Failed to fetch available queries");
+      return res.json();
+    },
+    staleTime: Infinity, // Query list rarely changes, cache indefinitely
   });
 };
