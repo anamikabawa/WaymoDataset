@@ -19,7 +19,7 @@ interface Message {
 const Index = () => {
   const [selectedType, setSelectedType] = useState("all");
   const [selectedFile, setSelectedFile] = useState("all");
-  const [severityRange, setSeverityRange] = useState([0, 3]);
+  const [severityRange, setSeverityRange] = useState([0, 1]);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedFrame, setSelectedFrame] = useState<any | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -42,7 +42,7 @@ const Index = () => {
     });
   };
   // Debounced severity range for filtering (updates after user stops dragging)
-  const [debouncedSeverityRange, setDebouncedSeverityRange] = useState([0, 3]);
+  const [debouncedSeverityRange, setDebouncedSeverityRange] = useState([0, 1]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

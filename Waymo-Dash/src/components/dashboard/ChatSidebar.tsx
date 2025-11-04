@@ -58,13 +58,15 @@ export function ChatSidebar({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
-      <DrawerContent className="h-full w-[500px] ml-auto">
-        <DrawerHeader className="border-b">
-          <DrawerTitle>AI Assistant</DrawerTitle>
-        </DrawerHeader>
+      <DrawerContent
+        className="right-2 top-2 bottom-2 fixed w-[800px]! max-w-none! outline-none border-transparent flex bg-transparent"
+      >
+        <div className="bg-background h-full w-full flex flex-col rounded-2xl border shadow-lg">
+          <DrawerHeader className="border-b shrink-0">
+            <DrawerTitle>AI Assistant</DrawerTitle>
+          </DrawerHeader>
 
-        <div className="flex flex-col h-full">
-          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+          <div className="flex-1 p-4 overflow-y-auto" ref={scrollRef}>
             <div className="space-y-4">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -106,22 +108,22 @@ export function ChatSidebar({
                 </div>
               )}
             </div>
-          </ScrollArea>
+       </div>
 
-          <div className="p-4 border-t">
-            <div className="flex gap-2">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask about the data..."
-                disabled={isLoading}
-              />
-              <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
+        <div className="p-4 border-t shrink-0">
+          <div className="flex gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Ask about the data..."
+              disabled={isLoading}
+            />
+            <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
+              <Send className="h-4 w-4" />
+            </Button>
           </div>
+        </div>
         </div>
       </DrawerContent>
     </Drawer>

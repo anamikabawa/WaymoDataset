@@ -28,18 +28,18 @@ async def get_dashboard_summary():
         
         # Stats
         totalEdgeCases = cursor.execute("SELECT COUNT(*) FROM edge_cases").fetchone()[0]
-        filesProcessed = cursor.execute("SELECT COUNT(DISTINCT file_name) FROM edge_cases").fetchone()[0]
+        filesProcessed = cursor.execute("SELECT COUNT(DISTINCT file_name) FROM frames").fetchone()[0]  # ← Changed to frames table
         edgeCaseTypes = cursor.execute("SELECT COUNT(DISTINCT edge_case_type) FROM edge_cases").fetchone()[0]
         maxSeverity = cursor.execute("SELECT MAX(severity) FROM edge_cases").fetchone()[0] or 0
         
         # Filters
         types_data = cursor.execute("SELECT DISTINCT edge_case_type FROM edge_cases ORDER BY edge_case_type").fetchall()
-        files_data = cursor.execute("SELECT DISTINCT file_name FROM edge_cases ORDER BY file_name").fetchall()
+        files_data = cursor.execute("SELECT DISTINCT file_name FROM frames ORDER BY file_name").fetchall()  # ← Changed to frames table
         
         # Pie chart
         pie_data = cursor.execute("SELECT edge_case_type as name, COUNT(*) as value FROM edge_cases GROUP BY edge_case_type").fetchall()
         
-        # Intent chart
+        # Intent chart - NO JOIN needed, just use frames table directly
         intent_data = cursor.execute("SELECT intent, COUNT(*) as count FROM frames GROUP BY intent ORDER BY count DESC").fetchall()
         
         conn.close()
@@ -136,7 +136,7 @@ async def get_stats():
         cursor = conn.cursor()
         
         totalEdgeCases = cursor.execute("SELECT COUNT(*) FROM edge_cases").fetchone()[0]
-        filesProcessed = cursor.execute("SELECT COUNT(DISTINCT file_name) FROM edge_cases").fetchone()[0]
+        filesProcessed = cursor.execute("SELECT COUNT(DISTINCT file_name) FROM frames").fetchone()[0]  # ← Changed to frames table
         edgeCaseTypes = cursor.execute("SELECT COUNT(DISTINCT edge_case_type) FROM edge_cases").fetchone()[0]
         maxSeverity = cursor.execute("SELECT MAX(severity) FROM edge_cases").fetchone()[0] or 0
         
@@ -159,7 +159,7 @@ async def get_filters():
         cursor = conn.cursor()
         
         types = cursor.execute("SELECT DISTINCT edge_case_type FROM edge_cases ORDER BY edge_case_type").fetchall()
-        files = cursor.execute("SELECT DISTINCT file_name FROM edge_cases ORDER BY file_name").fetchall()
+        files = cursor.execute("SELECT DISTINCT file_name FROM frames ORDER BY file_name").fetchall()  # ← Changed to frames table
         
         conn.close()
 
@@ -255,7 +255,14 @@ async def get_top_files_chart():
         cursor = conn.cursor()
         
         data = cursor.execute(
-            "SELECT file_name as file, COUNT(*) as count FROM edge_cases GROUP BY file_name ORDER BY count DESC LIMIT 10"
+            """
+            SELECT f.file_name as file, COUNT(ec.id) as count 
+            FROM frames f
+            LEFT JOIN edge_cases ec ON f.id = ec.frame_table_id
+            GROUP BY f.file_name 
+            ORDER BY count DESC 
+            LIMIT 10
+            """
         ).fetchall()
         
         conn.close()
@@ -270,8 +277,9 @@ async def get_top_files_chart():
 async def get_intent_chart():
     try:
         conn = sqlite3.connect(DB_PATH)
+        # FIXED: No JOIN needed - just query frames table directly
         df = pd.read_sql_query(
-            "SELECT f.intent as intent, COUNT(*) as count FROM edge_cases ec JOIN frames f ON ec.frame_id = f.frame_id GROUP BY f.intent",
+            "SELECT intent, COUNT(*) as count FROM frames GROUP BY intent ORDER BY count DESC",
             conn
         )
         conn.close()
@@ -286,15 +294,18 @@ async def get_intent_chart():
 async def get_scatter_chart():
     try:
         conn = sqlite3.connect(DB_PATH)
+        # FIXED: Use simple JOIN with frame_table_id
         df = pd.read_sql_query(
-            """SELECT 
+            """
+            SELECT 
                 f.speed_max as speed, 
                 f.accel_x_min as accel, 
                 ec.severity,
                 ec.edge_case_type,
-                ec.file_name
-            FROM edge_cases ec 
-            JOIN frames f ON ec.frame_id = f.frame_id""",
+                f.file_name
+            FROM edge_cases ec
+            JOIN frames f ON ec.frame_table_id = f.id
+            """,
             conn
         )
         conn.close()
@@ -369,17 +380,20 @@ async def get_pre_flagged_data(page: int = 1):
         conn = sqlite3.connect(DB_PATH)
         
         # Get total count
-        total_row = pd.read_sql_query("SELECT COUNT(*) as count FROM edge_cases", conn)
+        total_row = pd.read_sql_query(
+            "SELECT COUNT(*) as count FROM edge_cases", 
+            conn
+        )
         total = int(total_row['count'].iloc[0])
         
-        # Get paginated data
+        # FIXED: Simple JOIN using frame_table_id
         df = pd.read_sql_query(
             """
             SELECT 
                 ec.id,
-                ec.frame_id,
-                ec.file_name,
-                ec.timestamp,
+                f.frame_id,
+                f.file_name,
+                f.timestamp,
                 ec.edge_case_type,
                 ec.severity,
                 ec.reason,
@@ -395,7 +409,7 @@ async def get_pre_flagged_data(page: int = 1):
                 f.jerk_y_max,
                 f.panorama_thumbnail
             FROM edge_cases ec
-            LEFT JOIN frames f ON ec.frame_id = f.frame_id
+            JOIN frames f ON ec.frame_table_id = f.id
             ORDER BY ec.severity DESC
             LIMIT 25 OFFSET ?
             """,
@@ -466,37 +480,74 @@ async def get_pre_flagged_data(page: int = 1):
 
 
 @app.get("/api/frame/{frame_id}")
-async def get_frame_data(frame_id: int):
+async def get_frame_data(frame_id: int, file_name: str = None):
+    """
+    Get frame data by frame_id.
+    If file_name is provided, returns specific frame from that file.
+    Otherwise returns first match (may not be what you want if frame_id exists in multiple files).
+    """
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
         cursor.row_factory = sqlite3.Row
-        # Select only needed columns to speed up response
-        cursor.execute(
-            """
-            SELECT 
-                f.frame_id,
-                f.file_name,
-                f.intent,
-                f.speed_min,
-                f.speed_max,
-                f.speed_mean,
-                f.accel_x_min,
-                f.accel_x_max,
-                f.accel_y_min,
-                f.accel_y_max,
-                f.jerk_x_max,
-                f.jerk_y_max,
-                ec.edge_case_type,
-                ec.severity,
-                ec.reason
-            FROM frames f
-            LEFT JOIN edge_cases ec ON f.frame_id = ec.frame_id
-            WHERE f.frame_id = ?
-            """,
-            (frame_id,)
-        )
+        
+        # FIXED: Simple JOIN using frame_table_id
+        if file_name:
+            cursor.execute(
+                """
+                SELECT 
+                    f.id,
+                    f.frame_id,
+                    f.file_name,
+                    f.intent,
+                    f.speed_min,
+                    f.speed_max,
+                    f.speed_mean,
+                    f.accel_x_min,
+                    f.accel_x_max,
+                    f.accel_y_min,
+                    f.accel_y_max,
+                    f.jerk_x_max,
+                    f.jerk_y_max,
+                    f.panorama_thumbnail,
+                    ec.edge_case_type,
+                    ec.severity,
+                    ec.reason
+                FROM frames f
+                LEFT JOIN edge_cases ec ON f.id = ec.frame_table_id
+                WHERE f.frame_id = ? AND f.file_name = ?
+                """,
+                (frame_id, file_name)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT 
+                    f.id,
+                    f.frame_id,
+                    f.file_name,
+                    f.intent,
+                    f.speed_min,
+                    f.speed_max,
+                    f.speed_mean,
+                    f.accel_x_min,
+                    f.accel_x_max,
+                    f.accel_y_min,
+                    f.accel_y_max,
+                    f.jerk_x_max,
+                    f.jerk_y_max,
+                    f.panorama_thumbnail,
+                    ec.edge_case_type,
+                    ec.severity,
+                    ec.reason
+                FROM frames f
+                LEFT JOIN edge_cases ec ON f.id = ec.frame_table_id
+                WHERE f.frame_id = ?
+                LIMIT 1
+                """,
+                (frame_id,)
+            )
         
         row = cursor.fetchone()
         conn.close()
@@ -547,39 +598,48 @@ async def get_frame_data(frame_id: int):
 # ================== Agent Chat Endpoint (Sample) ==================#
 @app.post("/api/agent/chat")
 async def agent_chat(request: dict):
-    """Sample AI agent chat endpoint that returns a mock response"""
-    try:
-        user_message = request.get("message", "")
-        
-        # Sample responses based on keywords
-        responses = {
-            "high severity": "I found 234 high-severity cases (severity > 0.8) in the dataset. Most occur during right turns at speeds above 15 m/s with lateral acceleration over 0.6 m/s². Would you like me to show you the specific frames?",
-            "edge case": "The dataset contains 5 main edge case types: Hard Brake, Sharp Turn, Rapid Acceleration, Lane Change, and Emergency Stop. The most common is Hard Brake with 1,247 occurrences. Which type would you like to explore?",
-            "speed": "Average speed across all frames is 12.3 m/s (≈27.5 mph). The highest speeds occur during highway scenarios, with max recorded at 29.8 m/s (≈66.7 mph). Speed distribution is bimodal with peaks at 5 m/s (urban) and 20 m/s (highway).",
-            "file": f"The dataset contains {10} unique tfrecord files. The file with most edge cases is 'segment_12345.tfrecord' with 89 flagged frames. Would you like to filter the dashboard to show only this file?",
-            "default": f"Based on your question '{user_message}', I analyzed the edge case database. The data shows interesting patterns in vehicle behavior during critical scenarios. Could you be more specific about what you'd like to explore?"
-        }
-        
-        # Find matching response
-        response_text = responses["default"]
-        for keyword, response in responses.items():
-            if keyword in user_message.lower():
-                response_text = response
-                break
-        
-        return {
-            "response": response_text,
-            "tool_calls": [
-                {
-                    "tool": "execute_sql_query",
-                    "query": "SELECT COUNT(*) FROM edge_cases WHERE severity > 0.8",
-                    "row_count": 1,
-                    "success": True
-                }
-            ]
-        }
-    except Exception as e:
-        return {"error": str(e)}, 500
+    """Call the Waymo Agent for chat responses"""
+    user_message = request.get("message", "")
+    
+    from Waymo_Agent.agent import root_agent
+    from google.adk.runners import Runner
+    from google.adk.sessions.in_memory_session_service import InMemorySessionService
+    from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
+    from google.genai import types
+
+    #Create Runner
+    runner = Runner(
+        app_name = "Data Analyst",
+        agent = root_agent,
+        session_service = InMemorySessionService(),
+        memory_service = InMemoryMemoryService(),
+    )
+
+    #Create session
+    session = await runner.session_service.create_session(
+        app_name = "Data Analyst",
+        user_id = "Dashboard User",
+        state = {}
+    )
+
+    #Create message
+    content = types.Content(
+        role = 'user',
+        parts = [types.Part.from_text(text = user_message)]
+    )
+
+    #Get response
+    response_text = ""
+    async for event in runner.run_async(
+        user_id = session.user_id,
+        session_id = session.id,
+        new_message = content
+    ):
+        if event.content:
+            for part in event.content.parts:
+                if part.text:
+                    response_text += part.text
+    return {"response": response_text}
 
 
 if __name__ == "__main__":
