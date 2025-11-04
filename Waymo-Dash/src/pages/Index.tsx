@@ -5,7 +5,7 @@ import { Charts } from "@/components/dashboard/Charts";
 import { AdHocQuery } from "@/components/dashboard/AdHocQuery";
 import { PreFlaggedTable } from "@/components/dashboard/PreFlaggedTable";
 import { ThumbnailModal } from "@/components/dashboard/ThumbnailModal";
-import { MessageSquare } from "lucide-react";
+import { BotMessageSquare } from "lucide-react";
 import { ChatSidebar } from "@/components/dashboard/ChatSidebar";
 import { useAgentChat } from "@/hooks/useAgentChat";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,7 @@ const Index = () => {
             🚗 Waymo Edge Case Detection Dashboard
           </h1>
           <Button onClick={() => setChatOpen(true)} variant="outline" size="lg">
-            <MessageSquare className="mr-2 h-5 w-5" />
+            <BotMessageSquare className="mr-2 h-5 w-5" />
             Chat with Data
           </Button>
         </div>
@@ -101,6 +101,13 @@ const Index = () => {
           selectedFile={selectedFile}
           severityRange={debouncedSeverityRange}
         />
+        <Button onClick={() => setChatOpen(true)} 
+         variant="ghost" 
+         size="lg"
+         className="fixed bottom-6 right-6 z-50 shadow-elevated hover:shadow-xl transition-shadow rounded-full w-14 h-14 p-0 animate-bounce hover:animate-none"
+       >
+            <BotMessageSquare />
+          </Button>
       </main>
 
       {/* Thumbnail Modal */}

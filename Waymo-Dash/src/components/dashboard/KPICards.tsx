@@ -26,7 +26,7 @@ export const KPICards = () => {
     },
     {
       title: "Max Severity",
-      value: stats?.maxSeverity?.toFixed(2) || "0.00",
+      value: stats?.maxSeverity?.toFixed(4) || "0.00",
       icon: TrendingUp,
       color: "text-severity-critical",
     },
